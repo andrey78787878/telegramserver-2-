@@ -155,11 +155,12 @@ def main():
     app.add_handler(CallbackQueryHandler(on_answer, pattern="^ans\|"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_comment))
 
+    # Запуск вебхука
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=TELEGRAM_TOKEN,
-        webhook_url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+        webhook_url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}",
+        secret_token="WEBHOOK_SECRET"  # опционально для безопасности
     )
 
 if __name__ == "__main__":
