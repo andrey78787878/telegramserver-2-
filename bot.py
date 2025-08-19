@@ -27,7 +27,21 @@ try:
     print(f"✅ Загружено {len(questions)} вопросов")
 except FileNotFoundError:
     print("❌ Ошибка: файл questions.json не найден!")
-    questions = []
+    # Создаем тестовые вопросы чтобы бот мог работать
+    questions = [
+        {
+            "id": 1,
+            "category": "HTML",
+            "task": "Проверьте наличие doctype",
+            "code": "<!DOCTYPE html>"
+        },
+        {
+            "id": 2,
+            "category": "HTML", 
+            "task": "Проверьте валидность тегов",
+            "code": "<div><p>Текст</div>"
+        }
+    ]
 except json.JSONDecodeError as e:
     print(f"❌ Ошибка в формате questions.json: {e}")
     questions = []
@@ -81,12 +95,18 @@ async def show_question(query, q):
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    _, ans, qid = query.data.split("_")
-    qid = int(qid)
+    parts = query.data.split("_")
+    if len(parts) < 3:
+        await query.edit_message_text("❌ Ошибка в данных")
+        return
+        
+    ans = parts[1]
+    qid = parts[2]
     
     try:
+        qid = int(qid)
         q = next(x for x in questions if x["id"] == qid)
-    except StopIteration:
+    except (ValueError, StopIteration):
         await query.edit_message_text("❌ Вопрос не найден!")
         return
         
@@ -133,7 +153,12 @@ async def on_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Переход к следующему вопросу
 # =========================
 async def go_next_question(message_or_query, context):
-    current = context.user_data.get("current", {})
+    if "current" not in context.user_data:
+        if hasattr(message_or_query, "reply_text"):
+            await message_or_query.reply_text("❌ Сессия завершена. Используйте /start")
+        return
+        
+    current = context.user_data["current"]
     items = current.get("items", [])
     idx = current.get("index", 0) + 1
     context.user_data["current"]["index"] = idx
@@ -164,6 +189,10 @@ async def go_next_question(message_or_query, context):
 # Отправка в Google Apps Script
 # =========================
 async def send_to_webhook(user_id, q, answer, comment):
+    if not WEBHOOK_URL:
+        print("❌ WEBHOOK_URL не установлен, пропускаем отправку")
+        return
+        
     payload = {
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "user_id": str(user_id),
@@ -200,11 +229,11 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"❌ Ошибка: {context.error}")
-    if update and update.effective_message:
-        try:
+    try:
+        if update and update.effective_message:
             await update.effective_message.reply_text("❌ Произошла ошибка. /start - начать заново")
-        except:
-            pass
+    except:
+        pass
 
 # =========================
 # Основной запуск
@@ -214,28 +243,26 @@ def main():
         print("❌ Ошибка: TELEGRAM_TOKEN не установлен!")
         return
         
-    if not WEBHOOK_URL:
-        print("❌ Ошибка: WEBHOOK_URL не установлен!")
-        return
-        
-    if not questions:
-        print("❌ Ошибка: вопросы не загружены!")
-        return
-
     print("🤖 Запуск бота...")
+    print(f"📊 Вопросов: {len(questions)}")
+    print(f"🌐 WEBHOOK_URL: {'Установлен' if WEBHOOK_URL else 'Не установлен'}")
     
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("cancel", cancel))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CallbackQueryHandler(on_category, pattern="^cat_"))
-    app.add_handler(CallbackQueryHandler(on_answer, pattern="^ans_"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_comment))
-    app.add_error_handler(error_handler)
+    try:
+        app = Application.builder().token(TELEGRAM_TOKEN).build()
+        
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("cancel", cancel))
+        app.add_handler(CommandHandler("status", status))
+        app.add_handler(CallbackQueryHandler(on_category, pattern="^cat_"))
+        app.add_handler(CallbackQueryHandler(on_answer, pattern="^ans_"))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_comment))
+        app.add_error_handler(error_handler)
 
-    print("✅ Бот запущен в режиме polling")
-    app.run_polling()
+        print("✅ Бот запущен в режиме polling")
+        app.run_polling()
+        
+    except Exception as e:
+        print(f"❌ Критическая ошибка запуска: {e}")
 
 if __name__ == "__main__":
     main()
